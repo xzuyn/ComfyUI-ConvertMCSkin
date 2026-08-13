@@ -8,7 +8,36 @@ class ConvertMCSkinXZ:
         return {
             "required": {
                 "image": ("IMAGE",),
-            }
+                "safe_alpha": (
+                    "BOOLEAN",
+                    {
+                        "default": False,
+                        "tooltip": "Treat alpha mask values below safe_alpha_min as 0.0 (fully transparent), and values above safe_alpha_max as 1.0 (fully opaque).",
+                    },
+                ),
+            },
+            "optional": {
+                "safe_alpha_min": (
+                    "FLOAT",
+                    {
+                        "default": 0.1,
+                        "min": 0.0,
+                        "max": 1.0,
+                        "step": 0.01,
+                        "tooltip": "Threshold for 0.0 opacity.",
+                    },
+                ),
+                "safe_alpha_max": (
+                    "FLOAT",
+                    {
+                        "default": 0.9,
+                        "min": 0.0,
+                        "max": 1.0,
+                        "step": 0.01,
+                        "tooltip": "Threshold for 1.0 opacity.",
+                    },
+                ),
+            },
         }
 
     RETURN_TYPES = ("IMAGE",)
@@ -16,7 +45,7 @@ class ConvertMCSkinXZ:
     CATEGORY = "xzuynodes"
     DESCRIPTION = "Converts a 2:1 side-by-side skin image (left RGB, right alpha mask) into a 64x64 RGBA Minecraft skin."
 
-    def convert_skin(self, image):
+    def convert_skin(self, image, safe_alpha, safe_alpha_min=0.01, safe_alpha_max=0.99):
         _, H, W, _ = image.shape
         half_w = W // 2
 
@@ -34,7 +63,16 @@ class ConvertMCSkinXZ:
         skin_64 = F.interpolate(left_rgb_p, size=(64, 64), mode="nearest-exact")
         mask_64 = F.interpolate(mask_gray_p, size=(64, 64), mode="nearest-exact")
 
-        rgba_64 = torch.cat([skin_64, mask_64], dim=1)
+        if safe_alpha:
+            clean_alpha = torch.where(
+                mask_64 < safe_alpha_min,
+                0.0,
+                torch.where(mask_64 > safe_alpha_max, 1.0, mask_64),
+            )
+        else:
+            clean_alpha = mask_64
+
+        rgba_64 = torch.cat([skin_64, clean_alpha], dim=1)
         out_image = rgba_64.permute(0, 2, 3, 1)
 
         return (out_image,)
